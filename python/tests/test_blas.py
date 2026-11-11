@@ -935,6 +935,8 @@ class TestBlas(mlx_tests.MLXTestCase):
         np.random.seed(0)
         shapes = [(2048, 64, 2048), (2049, 48, 300), (4100, 16, 1), (1025, 24, 63)]
         shapes += [(20, 300, 1), (33, 1000, 999), (64, 2560, 128)]
+        # more rows with a transposed b, on large NAX devices
+        shapes += [(65, 300, 256), (100, 4100, 130), (256, 4096, 64), (511, 2050, 96)]
         for M, N, K in shapes:
             scale = K**-0.5
             a_np = np.random.normal(0.0, scale, (M, K)).astype(np.float32)

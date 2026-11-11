@@ -887,6 +887,25 @@ void steel_gemm_splitk_axpby_nax(
 // Split matmul routing
 ///////////////////////////////////////////////////////////////////////////////
 
+// Rows up to which a matmul with B transposed takes the thin NAX kernel: more
+// on large devices, and fewer when K is long enough for the NAX split-K.
+inline int thin_nax_max_rows(char devc, bool nax_split_k) {
+  if (devc != 'd') {
+    return 64;
+  }
+  return nax_split_k ? 192 : 512;
+}
+
+// Column blocks (sn) and K groups (ks) per threadgroup of the thin NAX kernel
+// above 64 rows: about 1024 SIMD-groups over the grid of 32 x 32 output
+// blocks, and two column blocks sharing their A chunk on large grids.
+inline void thin_nax_split(int M, int N, int& sn, int& ks) {
+  int64_t blocks = int64_t((M + 31) / 32) * ((N + 31) / 32);
+  sn = blocks >= 1536 ? 2 : 1;
+  int64_t groups = 1024 / blocks;
+  ks = (groups >= 4 && sn == 1) ? 4 : (groups >= 2 ? 2 : 1);
+}
+
 template <bool CHECK_AB>
 void steel_matmul_axpby(
     const Stream& s,
@@ -991,11 +1010,20 @@ void steel_matmul_axpby(
         /* float beta = */ beta);
   }
 
-  // Case 2: Few output rows or columns, small tiles with A in registers
+  // Large K with sufficient M, N: the NAX split-K of Case 3 below
+  bool nax_split_k = K >= 3 * std::max(M, N) ||
+      (std::max(M, N) <= 1024 && K > 2 * std::max(M, N));
+
+  // Case 2: Few output rows or columns, small tiles with A in registers.
+  // With B transposed, large devices keep the thin kernel up to a few hundred
+  // rows: the fused NAX GEMM's tiles leave most of their cores idle there.
   if (use_nax && batch_size_out == 1 && !transpose_a &&
-      (N <= 64 || (M <= 64 && transpose_b)) && out.dtype() != float32 &&
-      (transpose_b || int64_t(K) * ldb <= INT_MAX)) {
+      (N <= 64 || (M <= thin_nax_max_rows(devc, nax_split_k) && transpose_b)) &&
+      out.dtype() != float32 && (transpose_b || int64_t(K) * ldb <= INT_MAX)) {
     int sn = M < 2048 ? 1 : 2, ks = 4 / sn;
+    if (transpose_b && M > 64 && N > 64) {
+      thin_nax_split(M, N, sn, ks);
+    }
     std::ostringstream kname;
     kname << "steel_gemm_thin_nax_n" << (transpose_b ? 't' : 'n') << "_"
           << type_to_name(out) << "_um2_un2_sm1_sn" << sn << "_ks" << ks;
@@ -1047,9 +1075,7 @@ void steel_matmul_axpby(
   }
 
   // Case 3: Large K with sufficient M, N, and NAX is available, use NAX split-K
-  if (use_nax && batch_size_out == 1 &&
-      (K >= 3 * std::max(M, N) ||
-       (std::max(M, N) <= 1024 && K > 2 * std::max(M, N)))) {
+  if (use_nax && batch_size_out == 1 && nax_split_k) {
     return steel_gemm_splitk_axpby_nax<CHECK_AB>(
         /* const Stream& s = */ s,
         /* metal::Device& d = */ d,

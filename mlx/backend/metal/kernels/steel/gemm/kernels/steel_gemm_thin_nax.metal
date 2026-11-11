@@ -18,9 +18,14 @@
     instantiate_gemm_thin(nn, false, iname, itype, um, un, sm, sn, ks) \
     instantiate_gemm_thin(nt, true , iname, itype, um, un, sm, sn, ks)
 
+// The nt kernels with fewer K groups serve matmuls with more rows (matmul.cpp's
+// thin_nax_split).
 #define instantiate_gemm_thin_shapes_helper(iname, itype) \
     instantiate_gemm_thin_transpose_helper(iname, itype, 2, 2, 1, 1, 4) \
-    instantiate_gemm_thin_transpose_helper(iname, itype, 2, 2, 1, 2, 2)
+    instantiate_gemm_thin_transpose_helper(iname, itype, 2, 2, 1, 2, 2) \
+    instantiate_gemm_thin(nt, true, iname, itype, 2, 2, 1, 1, 2) \
+    instantiate_gemm_thin(nt, true, iname, itype, 2, 2, 1, 1, 1) \
+    instantiate_gemm_thin(nt, true, iname, itype, 2, 2, 1, 2, 1)
 
 instantiate_gemm_thin_shapes_helper(float16, half);
 instantiate_gemm_thin_shapes_helper(bfloat16, bfloat);
