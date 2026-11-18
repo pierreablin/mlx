@@ -644,10 +644,14 @@ inline bool use_qmv_mma(
   bool nax = metal::is_nax_available();
   bool affine = mode == QuantizationMode::Affine;
   // affine_qmv_mma beats qmv from 3 rows below gen 15 and qmv_wide from 4
-  // rows above; the other paths from 6.
+  // rows above; affine_qmv_nax beats qmv_wide from 3 rows on Ultra below 8
+  // bits (at 8 bits qmv_wide stays faster up to 5 rows); the other paths
+  // from 6.
   int min_rows = 6;
   if (affine && !nax) {
     min_rows = d.get_architecture_gen() >= 15 ? 4 : 3;
+  } else if (affine && bits < 8 && d.get_architecture().back() == 'd') {
+    min_rows = 3;
   }
   if ((M < min_rows) || (K % 128 != 0)) {
     return false;

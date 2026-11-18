@@ -927,8 +927,8 @@ class TestQuantized(mlx_tests.MLXTestCase):
                 (4224, 4128),
                 (512, 4096),  # smallest K: one K step per simdgroup
             ],
-            [3, 8, 9],
-            [4, 8],
+            [3, 4, 5, 8, 9],
+            [3, 4, 6, 8],
             [32, 64, 128],
             [mx.bfloat16, mx.float16, mx.float32],
         ):
